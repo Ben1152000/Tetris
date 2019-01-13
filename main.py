@@ -1,6 +1,6 @@
 
 from random import choice
-import time, os, curses
+import time, os, curses, copy
 
 class Board:
 
@@ -17,7 +17,13 @@ class Board:
     def __init__(self, window):
         self.grid = [[0 for j in range(10)] for i in range(20)]
         self.window = window
+        self.turns = 0
+        self.lost = False
+        self.lineClears = 0
 
+    def getBoard(self):
+        return copy.deepcopy(self.grid)
+        
     def display(self):
         self.window.clear()
         for row in self.grid:
@@ -25,6 +31,9 @@ class Board:
                 #self.window.addstr("{} ".format(i))
                 self.window.addstr("{}".format(". " if i == 0 else "[]"))
             self.window.addstr("\n")
+        self.window.addstr("turns: " + str(self.turns))
+        self.window.addstr("\nlost: " + str(self.lost))
+        self.window.addstr("\nclears: " + str(self.lineClears))
 
     def generateNewPiece(self):
         for loc in choice(self.PIECES):
@@ -99,20 +108,22 @@ class Board:
                     if self.grid[i][j] == 1 or self.grid[i][j] == 5:
                         self.grid[i][j] = 2
             self.lineClear()
+            if 2 in self.grid[0]: self.lost = True
         else:
             for i in range(len(self.grid)-1, -1, -1):
                 for j in range(len(self.grid[i])):
                     if self.grid[i][j] == 1 or self.grid[i][j] == 5:
                         self.grid[i+1][j] = self.grid[i][j]
                         self.grid[i][j] = 0
-    
+        self.turns += 1
+
     def lineClear(self):
         for i in range(len(self.grid)):
-            #print 0 in self.grid[i]
             if not (0 in self.grid[i]):
                 for j in range(i, 0, -1):
                     self.grid[j] = self.grid[j-1]
                 self.grid[0] = [0 for j in range(10)]
+                self.lineClears += 1
 
 def main(win):
     curses.noecho() #stop keys echoing to screen
@@ -144,7 +155,7 @@ def main(win):
             current = int(time.time())
             if counter < current:
                 board.incrementTime()
-                board.display() 
+                board.display()
                 counter = current
 
 if __name__ == '__main__':
