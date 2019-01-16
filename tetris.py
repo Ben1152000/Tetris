@@ -155,12 +155,10 @@ def main(win):
     
     board = Board(win)
     board.display()
-    ai = AI()
 
     counter = int(time.time())
     while 1:
         try:
-            ai.move(board)
             key = win.getkey()
             if key == os.linesep or key == 'q':
                 break

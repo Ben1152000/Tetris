@@ -530,4 +530,8 @@ def drawNextPiece(piece):
 
 
 if __name__ == '__main__':
+<<<<<<< HEAD
     main()
+=======
+    main()
+>>>>>>> 485183e9849cce1eebb5af4db0fdf1e1862189b8
