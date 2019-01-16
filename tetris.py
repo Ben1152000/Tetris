@@ -1,533 +1,196 @@
-# Tetromino (a Tetris clone)
-# By Al Sweigart al@inventwithpython.com
-# http://inventwithpython.com/pygame
-# Released under a "Simplified BSD" license
+from random import choice, randint
+import time, os, curses, copy
 
-import random, time, pygame, sys
-import pygame
+class Board:
 
-FPS = 25
-WINDOWWIDTH = 640
-WINDOWHEIGHT = 480
-BOXSIZE = 20
-BOARDWIDTH = 10
-BOARDHEIGHT = 20
-BLANK = '.'
+    PIECES = [
+        [(0, 3, 1), (0, 4, 5), (0, 5, 1), (0, 6, 1)],
+        [(0, 3, 1), (0, 4, 5), (0, 5, 1), (1, 4, 1)],
+        [(0, 4, 1), (0, 5, 5), (0, 6, 1), (1, 4, 1)],
+        [(0, 3, 1), (0, 4, 5), (0, 5, 1), (1, 5, 1)],
+        [(0, 4, 1), (0, 5, 1), (1, 4, 1), (1, 5, 1)],
+        [(0, 3, 1), (0, 4, 1), (1, 4, 5), (1, 5, 1)],
+        [(0, 5, 1), (0, 6, 1), (1, 4, 1), (1, 5, 5)],
+    ]
 
-MOVESIDEWAYSFREQ = 0.15
-MOVEDOWNFREQ = 0.1
+    def __init__(self, window):
+        self.grid = [[0 for j in range(10)] for i in range(20)]
+        self.window = window
+        self.turns = 0
+        self.lost = False
+        self.lineClears = 0
+        self.next = randint(1, 7)
+        self.autoChoice = True
+        self.generateNewPiece()
 
-XMARGIN = int((WINDOWWIDTH - BOARDWIDTH * BOXSIZE) / 2)
-TOPMARGIN = WINDOWHEIGHT - (BOARDHEIGHT * BOXSIZE) - 5
+    def getBoard(self):
+        return copy.deepcopy(self.grid)
+        
+    def display(self):
+        self.window.clear()
+        self.window.addstr("\n |--------------------|\n")
+        for row in self.grid:
+            self.window.addstr(" |")
+            for i in row:
+                #self.window.addstr("{} ".format(i))
+                self.window.addstr("{}".format("  " if i == 0 else "[]"))
+            self.window.addstr("|\n")
+        self.window.addstr(" |--------------------|\n")
+        self.window.addstr("\n  " + "".join([("[]" if (-1, i, 1) in self.PIECES[self.next-1] or (-1, i, 5) in self.PIECES[self.next-1] else "  ") for i in range(3, 7)]) + " turns: " + str(self.turns))
+        self.window.addstr("\n  " + "".join([("[]" if (0, i, 1) in self.PIECES[self.next-1] or (0, i, 5) in self.PIECES[self.next-1] else "  ") for i in range(3, 7)]) + " lost: " + str(self.lost))
+        self.window.addstr("\n  " + "".join([("[]" if (1, i, 1) in self.PIECES[self.next-1] or (1, i, 5) in self.PIECES[self.next-1] else "  ") for i in range(3, 7)]) + " clears: " + str(self.lineClears))
+        self.window.addstr("\n  " + "".join([("[]" if (2, i, 1) in self.PIECES[self.next-1] or (2, i, 5) in self.PIECES[self.next-1] else "  ") for i in range(3, 7)]) + " next: " + str(self.next))
+        self.window.addstr("\n")
 
-#               R    G    B
-WHITE       = (255, 255, 255)
-GRAY        = (185, 185, 185)
-BLACK       = (  0,   0,   0)
-RED         = (155,   0,   0)
-LIGHTRED    = (175,  20,  20)
-GREEN       = (  0, 155,   0)
-LIGHTGREEN  = ( 20, 175,  20)
-BLUE        = (  0,   0, 155)
-LIGHTBLUE   = ( 20,  20, 175)
-YELLOW      = (155, 155,   0)
-LIGHTYELLOW = (175, 175,  20)
+    def generateNewPiece(self):
+        for loc in self.PIECES[self.next - 1]:
+            self.grid[loc[0]][loc[1]] = loc[2]
+        if self.autoChoice:
+            self.next = randint(1, 7)
 
-BORDERCOLOR = BLUE
-BGCOLOR = BLACK
-TEXTCOLOR = WHITE
-TEXTSHADOWCOLOR = GRAY
-COLORS      = (     BLUE,      GREEN,      RED,      YELLOW)
-LIGHTCOLORS = (LIGHTBLUE, LIGHTGREEN, LIGHTRED, LIGHTYELLOW)
-assert len(COLORS) == len(LIGHTCOLORS) # each color must have light color
+    def rotateActive(self):
+        pivot = (-1, -1)
+        for i in range(len(self.grid)):
+            for j in range(len(self.grid[i])):
+                if self.grid[i][j] == 5:
+                    pivot = (i, j) #break
+        if pivot[0] != -1:
+            error = False
+            for i in range(len(self.grid)):
+                for j in range(len(self.grid[i])):
+                    if self.grid[i][j] == 1 or self.grid[i][j] == 4:
+                        if pivot[0] + j - pivot[1] > 19 or pivot[1] + pivot[0] - i > 9 or pivot[0] + j - pivot[1] < 0 or pivot[1] + pivot[0] - i < 0 or self.grid[pivot[0] + j - pivot[1]][pivot[1] + pivot[0] - i] == 2:
+                            error = True #break
+            if not error:
+                for i in range(len(self.grid)):
+                    for j in range(len(self.grid[i])):
+                        if self.grid[i][j] == 1 or self.grid[i][j] == 4:
+                            self.grid[pivot[0] + j - pivot[1]][pivot[1] + pivot[0] - i] += 3
+                            self.grid[i][j] -= 1
+                for i in range(len(self.grid)):
+                    for j in range(len(self.grid[i])):
+                        if self.grid[i][j] == 3 or self.grid[i][j] == 4:
+                            self.grid[i][j] -= 2
 
-TEMPLATEWIDTH = 5
-TEMPLATEHEIGHT = 5
+    def translateActiveLeft(self):
+        onLeft = False
+        for i in range(len(self.grid)):
+            for j in range(len(self.grid[i])):
+                if self.grid[i][j] == 1 or self.grid[i][j] == 5:
+                    if j == 0 or self.grid[i][j-1] == 2:
+                        onLeft = True #break
+        if not onLeft:
+            for i in range(len(self.grid)):
+                for j in range(len(self.grid[i])):
+                    if self.grid[i][j] == 1 or self.grid[i][j] == 5:
+                        self.grid[i][j-1] = self.grid[i][j]
+                        self.grid[i][j] = 0
 
-S_SHAPE_TEMPLATE = [['.....',
-                     '.....',
-                     '..OO.',
-                     '.OO..',
-                     '.....'],
-                    ['.....',
-                     '..O..',
-                     '..OO.',
-                     '...O.',
-                     '.....']]
+    def translateActiveRight(self):
+        onRight = False
+        for i in range(len(self.grid)):
+            for j in range(len(self.grid[i])):
+                if self.grid[i][j] == 1 or self.grid[i][j] == 5:
+                    if j == 9 or self.grid[i][j+1] == 2:
+                        onRight = True #break
+        if not onRight:
+            for i in range(len(self.grid)):
+                for j in range(len(self.grid[i])-1, -1, -1):
+                    if self.grid[i][j] == 1 or self.grid[i][j] == 5:
+                        self.grid[i][j+1] = self.grid[i][j]
+                        self.grid[i][j] = 0
 
-Z_SHAPE_TEMPLATE = [['.....',
-                     '.....',
-                     '.OO..',
-                     '..OO.',
-                     '.....'],
-                    ['.....',
-                     '..O..',
-                     '.OO..',
-                     '.O...',
-                     '.....']]
-
-I_SHAPE_TEMPLATE = [['..O..',
-                     '..O..',
-                     '..O..',
-                     '..O..',
-                     '.....'],
-                    ['.....',
-                     '.....',
-                     'OOOO.',
-                     '.....',
-                     '.....']]
-
-O_SHAPE_TEMPLATE = [['.....',
-                     '.....',
-                     '.OO..',
-                     '.OO..',
-                     '.....']]
-
-J_SHAPE_TEMPLATE = [['.....',
-                     '.O...',
-                     '.OOO.',
-                     '.....',
-                     '.....'],
-                    ['.....',
-                     '..OO.',
-                     '..O..',
-                     '..O..',
-                     '.....'],
-                    ['.....',
-                     '.....',
-                     '.OOO.',
-                     '...O.',
-                     '.....'],
-                    ['.....',
-                     '..O..',
-                     '..O..',
-                     '.OO..',
-                     '.....']]
-
-L_SHAPE_TEMPLATE = [['.....',
-                     '...O.',
-                     '.OOO.',
-                     '.....',
-                     '.....'],
-                    ['.....',
-                     '..O..',
-                     '..O..',
-                     '..OO.',
-                     '.....'],
-                    ['.....',
-                     '.....',
-                     '.OOO.',
-                     '.O...',
-                     '.....'],
-                    ['.....',
-                     '.OO..',
-                     '..O..',
-                     '..O..',
-                     '.....']]
-
-T_SHAPE_TEMPLATE = [['.....',
-                     '..O..',
-                     '.OOO.',
-                     '.....',
-                     '.....'],
-                    ['.....',
-                     '..O..',
-                     '..OO.',
-                     '..O..',
-                     '.....'],
-                    ['.....',
-                     '.....',
-                     '.OOO.',
-                     '..O..',
-                     '.....'],
-                    ['.....',
-                     '..O..',
-                     '.OO..',
-                     '..O..',
-                     '.....']]
-
-PIECES = {'S': S_SHAPE_TEMPLATE,
-          'Z': Z_SHAPE_TEMPLATE,
-          'J': J_SHAPE_TEMPLATE,
-          'L': L_SHAPE_TEMPLATE,
-          'I': I_SHAPE_TEMPLATE,
-          'O': O_SHAPE_TEMPLATE,
-          'T': T_SHAPE_TEMPLATE}
-
-
-def main():
-    global FPSCLOCK, DISPLAYSURF, BASICFONT, BIGFONT
-    pygame.init()
-    FPSCLOCK = pygame.time.Clock()
-    DISPLAYSURF = pygame.display.set_mode((WINDOWWIDTH, WINDOWHEIGHT))
-    BASICFONT = pygame.font.Font('freesansbold.ttf', 18)
-    BIGFONT = pygame.font.Font('freesansbold.ttf', 100)
-    pygame.display.set_caption('Tetromino')
-
-    showTextScreen('Tetromino')
-    while True: # game loop
-        runGame()
-        showTextScreen('Game Over')
-
-
-def runGame():
-    # setup variables for the start of the game
-    board = getBlankBoard()
-    lastMoveDownTime = time.time()
-    lastMoveSidewaysTime = time.time()
-    lastFallTime = time.time()
-    movingDown = False # note: there is no movingUp variable
-    movingLeft = False
-    movingRight = False
-    score = 0
-    level, fallFreq = calculateLevelAndFallFreq(score)
-    piece = 0
-
-    fallingPiece = getNewPiece(piece)
-    nextPiece = getNewPiece(piece)
-
-    while True: # game loop
-        if fallingPiece == None:
-            # No falling piece in play, so start a new piece at the top
-            fallingPiece = nextPiece
-            nextPiece = getNewPiece()
-            lastFallTime = time.time() # reset lastFallTime
-
-            if not isValidPosition(board, fallingPiece):
-                return # can't fit a new piece on the board, so game over
-
-        checkForQuit()
-        for event in pygame.event.get(): # event handling loop
-            if event.type == pygame.KEYUP:
-                if (event.key == pygame.K_p):
-                    # Pausing the game
-                    DISPLAYSURF.fill(BGCOLOR)
-                    showTextScreen('Paused') # pause until a key press
-                    lastFallTime = time.time()
-                    lastMoveDownTime = time.time()
-                    lastMoveSidewaysTime = time.time()
-                elif (event.key == pygame.K_LEFT or event.key == pygame.K_a):
-                    movingLeft = False
-                elif (event.key == pygame.K_RIGHT or event.key == pygame.K_d):
-                    movingRight = False
-                elif (event.key == pygame.K_DOWN or event.key == pygame.K_s):
-                    movingDown = False
-
-            elif event.type == pygame.KEYDOWN:
-                # moving the piece sideways
-                if (event.key == pygame.K_LEFT or event.key == pygame.K_a) and isValidPosition(board, fallingPiece, adjX=-1):
-                    fallingPiece['x'] -= 1
-                    movingLeft = True
-                    movingRight = False
-                    lastMoveSidewaysTime = time.time()
-
-                elif (event.key == pygame.K_RIGHT or event.key == pygame.K_d) and isValidPosition(board, fallingPiece, adjX=1):
-                    fallingPiece['x'] += 1
-                    movingRight = True
-                    movingLeft = False
-                    lastMoveSidewaysTime = time.time()
-
-                # rotating the piece (if there is room to rotate)
-                elif (event.key == pygame.K_UP or event.key == pygame.K_w):
-                    fallingPiece['rotation'] = (fallingPiece['rotation'] + 1) % len(PIECES[fallingPiece['shape']])
-                    if not isValidPosition(board, fallingPiece):
-                        fallingPiece['rotation'] = (fallingPiece['rotation'] - 1) % len(PIECES[fallingPiece['shape']])
-                elif (event.key == pygame.K_q): # rotate the other direction
-                    fallingPiece['rotation'] = (fallingPiece['rotation'] - 1) % len(PIECES[fallingPiece['shape']])
-                    if not isValidPosition(board, fallingPiece):
-                        fallingPiece['rotation'] = (fallingPiece['rotation'] + 1) % len(PIECES[fallingPiece['shape']])
-
-                # making the piece fall faster with the down key
-                elif (event.key == pygame.K_DOWN or event.key == pygame.K_s):
-                    movingDown = True
-                    if isValidPosition(board, fallingPiece, adjY=1):
-                        fallingPiece['y'] += 1
-                    lastMoveDownTime = time.time()
-
-                # move the current piece all the way down
-                elif event.key == pygame.K_SPACE:
-                    movingDown = False
-                    movingLeft = False
-                    movingRight = False
-                    for i in range(1, BOARDHEIGHT):
-                        if not isValidPosition(board, fallingPiece, adjY=i):
-                            break
-                    fallingPiece['y'] += i - 1
-
-                elif event.key == pygame.K_0:
-                    piece = 0
-                    nextPiece = getNewPiece(piece)
-                elif event.key == pygame.K_1:
-                    piece = 1
-                    nextPiece = getNewPiece(piece)
-                elif event.key == pygame.K_2:
-                    piece = 2
-                    nextPiece = getNewPiece(piece)
-                elif event.key == pygame.K_3:
-                    piece = 3
-                    nextPiece = getNewPiece(piece)
-                elif event.key == pygame.K_4:
-                    piece = 4
-                    nextPiece = getNewPiece(piece)
-                elif event.key == pygame.K_5:
-                    piece = 5
-                    nextPiece = getNewPiece(piece)
-                elif event.key == pygame.K_6:
-                    piece = 6
-                    nextPiece = getNewPiece(piece)
-                elif event.key == pygame.K_7:
-                    piece = 7
-                    nextPiece = getNewPiece(piece)
-
-        # handle moving the piece because of user input
-        if (movingLeft or movingRight) and time.time() - lastMoveSidewaysTime > MOVESIDEWAYSFREQ:
-            if movingLeft and isValidPosition(board, fallingPiece, adjX=-1):
-                fallingPiece['x'] -= 1
-            elif movingRight and isValidPosition(board, fallingPiece, adjX=1):
-                fallingPiece['x'] += 1
-            lastMoveSidewaysTime = time.time()
-
-        if movingDown and time.time() - lastMoveDownTime > MOVEDOWNFREQ and isValidPosition(board, fallingPiece, adjY=1):
-            fallingPiece['y'] += 1
-            lastMoveDownTime = time.time()
-
-        # let the piece fall if it is time to fall
-        if time.time() - lastFallTime > fallFreq:
-            # see if the piece has landed
-            if not isValidPosition(board, fallingPiece, adjY=1):
-                # falling piece has landed, set it on the board
-                addToBoard(board, fallingPiece)
-                score += removeCompleteLines(board)
-                level, fallFreq = calculateLevelAndFallFreq(score)
-                fallingPiece = None
-            else:
-                # piece did not land, just move the piece down
-                fallingPiece['y'] += 1
-                lastFallTime = time.time()
-
-        # drawing everything on the screen
-        DISPLAYSURF.fill(BGCOLOR)
-        drawBoard(board)
-        drawStatus(score, level, piece)
-        drawNextPiece(nextPiece)
-        if fallingPiece != None:
-            drawPiece(fallingPiece)
-
-        pygame.display.update()
-        FPSCLOCK.tick(FPS)
-
-
-def makeTextObjs(text, font, color):
-    surf = font.render(text, True, color)
-    return surf, surf.get_rect()
-
-
-def terminate():
-    pygame.quit()
-    sys.exit()
-
-
-def checkForKeyPress():
-    # Go through event queue looking for a KEYUP event.
-    # Grab KEYDOWN events to remove them from the event queue.
-    checkForQuit()
-
-    for event in pygame.event.get([pygame.KEYDOWN, pygame.KEYUP]):
-        if event.type == pygame.KEYDOWN:
-            continue
-        return event.key
-    return None
-
-
-def showTextScreen(text):
-    # This function displays large text in the
-    # center of the screen until a key is pressed.
-    # Draw the text drop shadow
-    titleSurf, titleRect = makeTextObjs(text, BIGFONT, TEXTSHADOWCOLOR)
-    titleRect.center = (int(WINDOWWIDTH / 2), int(WINDOWHEIGHT / 2))
-    DISPLAYSURF.blit(titleSurf, titleRect)
-
-    # Draw the text
-    titleSurf, titleRect = makeTextObjs(text, BIGFONT, TEXTCOLOR)
-    titleRect.center = (int(WINDOWWIDTH / 2) - 3, int(WINDOWHEIGHT / 2) - 3)
-    DISPLAYSURF.blit(titleSurf, titleRect)
-
-    # Draw the additional "Press a key to play." text.
-    pressKeySurf, pressKeyRect = makeTextObjs('Press a key to play.', BASICFONT, TEXTCOLOR)
-    pressKeyRect.center = (int(WINDOWWIDTH / 2), int(WINDOWHEIGHT / 2) + 100)
-    DISPLAYSURF.blit(pressKeySurf, pressKeyRect)
-
-    while checkForKeyPress() == None:
-        pygame.display.update()
-        FPSCLOCK.tick()
-
-
-def checkForQuit():
-    for event in pygame.event.get(pygame.QUIT): # get all the QUIT events
-        terminate() # terminate if any QUIT events are present
-    for event in pygame.event.get(pygame.KEYUP): # get all the KEYUP events
-        if event.key == pygame.K_ESCAPE:
-            terminate() # terminate if the KEYUP event was for the Esc key
-        pygame.event.post(event) # put the other KEYUP event objects back
-
-
-def calculateLevelAndFallFreq(score):
-    # Based on the score, return the level the player is on and
-    # how many seconds pass until a falling piece falls one space.
-    level = int(score / 10) + 1
-    fallFreq = 0.27 - (level * 0.02)
-    return level, fallFreq
-
-def getNewPiece(piece=0):
-    # return a random new piece in a random rotation and color
-    if piece == 0:
-        shape = random.choice(list(PIECES.keys()))
-    else:
-        shape = list(PIECES.keys())[piece-1]
-    newPiece = {'shape': shape,
-                'rotation': random.randint(0, len(PIECES[shape]) - 1),
-                'x': int(BOARDWIDTH / 2) - int(TEMPLATEWIDTH / 2),
-                'y': -2, # start it above the board (i.e. less than 0)
-                'color': random.randint(0, len(COLORS)-1)}
-    return newPiece
-
-
-def addToBoard(board, piece):
-    # fill in the board based on piece's location, shape, and rotation
-    for x in range(TEMPLATEWIDTH):
-        for y in range(TEMPLATEHEIGHT):
-            if PIECES[piece['shape']][piece['rotation']][y][x] != BLANK:
-                board[x + piece['x']][y + piece['y']] = piece['color']
-
-
-def getBlankBoard():
-    # create and return a new blank board data structure
-    board = []
-    for i in range(BOARDWIDTH):
-        board.append([BLANK] * BOARDHEIGHT)
-    return board
-
-
-def isOnBoard(x, y):
-    return x >= 0 and x < BOARDWIDTH and y < BOARDHEIGHT
-
-
-def isValidPosition(board, piece, adjX=0, adjY=0):
-    # Return True if the piece is within the board and not colliding
-    for x in range(TEMPLATEWIDTH):
-        for y in range(TEMPLATEHEIGHT):
-            isAboveBoard = y + piece['y'] + adjY < 0
-            if isAboveBoard or PIECES[piece['shape']][piece['rotation']][y][x] == BLANK:
-                continue
-            if not isOnBoard(x + piece['x'] + adjX, y + piece['y'] + adjY):
-                return False
-            if board[x + piece['x'] + adjX][y + piece['y'] + adjY] != BLANK:
-                return False
-    return True
-
-def isCompleteLine(board, y):
-    # Return True if the line filled with boxes with no gaps.
-    for x in range(BOARDWIDTH):
-        if board[x][y] == BLANK:
-            return False
-    return True
-
-
-def removeCompleteLines(board):
-    # Remove any completed lines on the board, move everything above them down, and return the number of complete lines.
-    numLinesRemoved = 0
-    y = BOARDHEIGHT - 1 # start y at the bottom of the board
-    while y >= 0:
-        if isCompleteLine(board, y):
-            # Remove the line and pull boxes down by one line.
-            for pullDownY in range(y, 0, -1):
-                for x in range(BOARDWIDTH):
-                    board[x][pullDownY] = board[x][pullDownY-1]
-            # Set very top line to blank.
-            for x in range(BOARDWIDTH):
-                board[x][0] = BLANK
-            numLinesRemoved += 1
-            # Note on the next iteration of the loop, y is the same.
-            # This is so that if the line that was pulled down is also
-            # complete, it will be removed.
+    def incrementTime(self):
+        onBottom = False
+        noneActive = True
+        for i in range(len(self.grid)):
+            for j in range(len(self.grid[i])):
+                if self.grid[i][j] == 1 or self.grid[i][j] == 5:
+                    noneActive = False
+                    if i == 19 or self.grid[i+1][j] == 2:
+                        onBottom = True
+        if noneActive:
+            self.generateNewPiece()
+        elif onBottom:
+            for i in range(len(self.grid)):
+                for j in range(len(self.grid[i])):
+                    if self.grid[i][j] == 1 or self.grid[i][j] == 5:
+                        self.grid[i][j] = 2
+            self.lineClear()
+            if 2 in self.grid[0]: self.lost = True
         else:
-            y -= 1 # move on to check next row up
-    return numLinesRemoved
+            for i in range(len(self.grid)-1, -1, -1):
+                for j in range(len(self.grid[i])):
+                    if self.grid[i][j] == 1 or self.grid[i][j] == 5:
+                        self.grid[i+1][j] = self.grid[i][j]
+                        self.grid[i][j] = 0
+        self.turns += 1
+
+    def lineClear(self):
+        for i in range(len(self.grid)):
+            if not (0 in self.grid[i]):
+                for j in range(i, 0, -1):
+                    self.grid[j] = self.grid[j-1]
+                self.grid[0] = [0 for j in range(10)]
+                self.lineClears += 1
+
+class AI():
+
+    def __init__(self):
+        pass
+    
+    def move(self, state):
+        choice = randint(1, 3)
+        if choice == 1:
+            state.translateActiveLeft()
+        elif choice == 2:
+            state.translateActiveRight()
+        else:
+            state.rotateActive()
 
 
-def convertToPixelCoords(boxx, boxy):
-    # Convert the given xy coordinates of the board to xy
-    # coordinates of the location on the screen.
-    return (XMARGIN + (boxx * BOXSIZE)), (TOPMARGIN + (boxy * BOXSIZE))
+def main(win):
+    curses.noecho() #stop keys echoing to screen
+    win.nodelay(True)
+    
+    board = Board(win)
+    board.display()
+    ai = AI()
 
-
-def drawBox(boxx, boxy, color, pixelx=None, pixely=None):
-    # draw a single box (each tetromino piece has four boxes)
-    # at xy coordinates on the board. Or, if pixelx & pixely
-    # are specified, draw to the pixel coordinates stored in
-    # pixelx & pixely (this is used for the "Next" piece).
-    if color == BLANK:
-        return
-    if pixelx == None and pixely == None:
-        pixelx, pixely = convertToPixelCoords(boxx, boxy)
-    pygame.draw.rect(DISPLAYSURF, COLORS[color], (pixelx + 1, pixely + 1, BOXSIZE - 1, BOXSIZE - 1))
-    pygame.draw.rect(DISPLAYSURF, LIGHTCOLORS[color], (pixelx + 1, pixely + 1, BOXSIZE - 4, BOXSIZE - 4))
-
-
-def drawBoard(board):
-    # draw the border around the board
-    pygame.draw.rect(DISPLAYSURF, BORDERCOLOR, (XMARGIN - 3, TOPMARGIN - 7, (BOARDWIDTH * BOXSIZE) + 8, (BOARDHEIGHT * BOXSIZE) + 8), 5)
-
-    # fill the background of the board
-    pygame.draw.rect(DISPLAYSURF, BGCOLOR, (XMARGIN, TOPMARGIN, BOXSIZE * BOARDWIDTH, BOXSIZE * BOARDHEIGHT))
-    # draw the individual boxes on the board
-    for x in range(BOARDWIDTH):
-        for y in range(BOARDHEIGHT):
-            drawBox(x, y, board[x][y])
-
-
-def drawStatus(score, level, piece):
-    # draw the score text
-    scoreSurf = BASICFONT.render('Score: %s' % score, True, TEXTCOLOR)
-    scoreRect = scoreSurf.get_rect()
-    scoreRect.topleft = (WINDOWWIDTH - 150, 20)
-    DISPLAYSURF.blit(scoreSurf, scoreRect)
-
-    # draw the level text
-    levelSurf = BASICFONT.render('Level: %s' % level, True, TEXTCOLOR)
-    levelRect = levelSurf.get_rect()
-    levelRect.topleft = (WINDOWWIDTH - 150, 50)
-    DISPLAYSURF.blit(levelSurf, levelRect)
-
-    # draw the next piece indicator
-    pieceSurf = BASICFONT.render('Piece: %s' % piece, True, TEXTCOLOR)
-    pieceRect = levelSurf.get_rect()
-    pieceRect.topleft = (WINDOWWIDTH - 150, 80)
-    DISPLAYSURF.blit(pieceSurf, pieceRect)
-
-
-def drawPiece(piece, pixelx=None, pixely=None):
-    shapeToDraw = PIECES[piece['shape']][piece['rotation']]
-    if pixelx == None and pixely == None:
-        # if pixelx & pixely hasn't been specified, use the location stored in the piece data structure
-        pixelx, pixely = convertToPixelCoords(piece['x'], piece['y'])
-
-    # draw each of the boxes that make up the piece
-    for x in range(TEMPLATEWIDTH):
-        for y in range(TEMPLATEHEIGHT):
-            if shapeToDraw[y][x] != BLANK:
-                drawBox(None, None, piece['color'], pixelx + (x * BOXSIZE), pixely + (y * BOXSIZE))
-
-
-def drawNextPiece(piece):
-    # draw the "next" text
-    nextSurf = BASICFONT.render('Next:', True, TEXTCOLOR)
-    nextRect = nextSurf.get_rect()
-    nextRect.topleft = (WINDOWWIDTH - 120, 110)
-    DISPLAYSURF.blit(nextSurf, nextRect)
-    # draw the "next" piece
-    drawPiece(piece, pixelx=WINDOWWIDTH-120, pixely=130)
-
+    counter = int(time.time())
+    while 1:
+        try:
+            ai.move(board)
+            key = win.getkey()
+            if key == os.linesep or key == 'q':
+                break
+            if key == 's' or key == 'KEY_DOWN':
+                board.incrementTime()
+                board.display()
+            if key == 'a' or key == 'KEY_LEFT':
+                board.translateActiveLeft()
+                board.display()
+            if key == 'd' or key == 'KEY_RIGHT':
+                board.translateActiveRight()
+                board.display()
+            if key == 'w' or key == 'KEY_UP':
+                board.rotateActive()
+                board.display()
+            if key in ['{}'.format(i) for i in range(8)]:
+                if key == '0':
+                    board.autoChoice = True
+                    board.next = randint(1, 7)
+                else:
+                    board.autoChoice = False
+                    board.next = int(key)
+                board.display()
+        except Exception as e:
+            # No input
+            current = int(time.time())
+            if counter < current:
+                board.incrementTime()
+                board.display()
+                counter = current
 
 if __name__ == '__main__':
-    main()
+    curses.wrapper(main)
